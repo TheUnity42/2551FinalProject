@@ -1,9 +1,18 @@
+#include "LCDKeypad.hpp"
 
+
+LCDKeypad keypad(8, 9, 4, 5, 6, 7, A0);
 
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
+  keypad.begin(16, 2);
+  keypad.print("Hello, World");
+  
+  
 }
 
 void loop() {
-  digitalWrite(LED_BUILTIN, HIGH);
+  keypad.clear();
+  keypad.setCursor(0, 1);
+  keypad.print(keypad.getButtonPress());
+  delay(100);
 }
