@@ -1,7 +1,9 @@
 #ifndef Message_hpp
 #define Message_hpp
 
+#ifndef UUID_LENGTH
 #define UUID_LENGTH 5
+#endif
 #define MESSAGE_MAX_LENGTH 16
 
 class Message {
@@ -25,8 +27,8 @@ class Message {
 
   private:
 	unsigned char *sender;
-    unsigned char *receiver;
-    unsigned short payload;
-    unsigned char length;
+	unsigned char *receiver;
+	unsigned char length;
+	unsigned short payload;
 };
 #endif /* Message_hpp */

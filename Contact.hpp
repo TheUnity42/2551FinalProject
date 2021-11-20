@@ -17,6 +17,6 @@ class Contact {
 
   private:
 	unsigned char *UUID;
-    char *name;
+	char *name;
 };
 #endif /* Contact_hpp */

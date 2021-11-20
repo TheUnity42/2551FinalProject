@@ -1,18 +1,19 @@
+#include "Contact.hpp"
 #include "LCDKeypad.hpp"
-
+#include "Message.hpp"
+#include "Memory.hpp"
 
 LCDKeypad keypad(8, 9, 4, 5, 6, 7, A0);
 
+unsigned char uuid[5] = {0, 1, 2, 3, 4};
+
 void setup() {
-  keypad.begin(16, 2);
-  keypad.print("Hello, World");
+	keypad.begin(16, 2);
   
-  
+	Contact contact(uuid, "Carl");
+	Message message(uuid, uuid, "--..--");
+
+  Memory memory(contact);
 }
 
-void loop() {
-  keypad.clear();
-  keypad.setCursor(0, 1);
-  keypad.print(keypad.getButtonPress());
-  delay(100);
-}
+void loop() {}
