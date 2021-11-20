@@ -14,7 +14,7 @@ Button LCDKeypad::getButtonPress() {
   if(abs(analogRead(buttonPin) - value) <= THRESHOLD) {
     for(int i = 0; i < 6; i++) {
       if(abs(value - VOLTAGES[i]) <= THRESHOLD) {
-         b = i;
+         b = static_cast<Button>(i);
       }
     }
   }
