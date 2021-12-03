@@ -27,34 +27,34 @@
 
 class Memory {
   public:
-	Memory();
-	Memory(Contact node);
-	unsigned char *getNodeUUID();
-	char *getNodeName();
-	unsigned short getNumberContacts();
-	unsigned short getNumberMessages();
-	Contact getContact(unsigned short index);
-	Message getMessage(unsigned short index);
-	bool saveContact(Contact contact);
-	void saveMessage(Message message);
-	void saveNodeInformation(Contact contact);
+    Memory();
+    Memory(Contact node);
+    unsigned char *getNodeUUID();
+    char *getNodeName();
+    unsigned short getNumberContacts();
+    unsigned short getNumberMessages();
+    Contact getContact(unsigned short index);
+    Message getMessage(unsigned short index);
+    bool saveContact(Contact contact);
+    void saveMessage(Message message);
+    void saveNodeInformation(Contact contact);
+    static bool hasSchema();
+    void clearMessages();
+    void clearContacts();
 
   protected:
-	bool hasSchema();
-	void setSchema();
-	void clearMessages();
-	void clearContacts();
-	unsigned short getMessagePointerOffset();
+    void setSchema();
+    unsigned short getMessagePointerOffset();
 
   public:
-	unsigned char read(unsigned int uiAddress);
-	void write(unsigned int uiAddress, unsigned char data);
-	Contact getContactFromMemory(unsigned short addr);
-	Message getMessageFromMemory(unsigned short addr);
-	unsigned char *getUUIDFromMemory(unsigned short addr);
-	void saveContactToMemory(Contact contact, unsigned short addr);
-	void saveMessageToMemory(Message message, unsigned short addr);
-	void saveUUIDToMemory(unsigned char *uuid, unsigned short addr);
+    static unsigned char read(unsigned int uiAddress);
+    static void write(unsigned int uiAddress, unsigned char data);
+    Contact getContactFromMemory(unsigned short addr);
+    Message getMessageFromMemory(unsigned short addr);
+    unsigned char *getUUIDFromMemory(unsigned short addr);
+    void saveContactToMemory(Contact contact, unsigned short addr);
+    void saveMessageToMemory(Message message, unsigned short addr);
+    void saveUUIDToMemory(unsigned char *uuid, unsigned short addr);
 };
 
 #endif /* Memory_hpp */

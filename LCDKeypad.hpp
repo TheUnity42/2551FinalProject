@@ -21,7 +21,7 @@ class LCDKeypad : public LiquidCrystal {
   private:
 	int buttonPin;
 	const int DEBOUNCE_DELAY = 100;
-	const int THRESHOLD = 25;
+	const int THRESHOLD = 30;
 	const int VOLTAGES[6] = {411, 10, 99, 256, 639, 1023};
 };
 
