@@ -10,6 +10,19 @@
 #include "Message.hpp"
 #include "Memory.hpp"
 
+#define IRQ_PIN 2
+
+RF24 radio(A1, A2);
+
+const uint8_t tx_pl_size = 2;
+const uint8_t ack_pl_size = 2;
+
+
+byte gotByte = 0; //used to store payload from transmit module
+volatile int count = 0; //tracks the number of interrupts from IRQ
+int pCount = 0; //tracks what last count value was so know when count has been updated
+byte counter = 1; //used to count the packets sent
+
 LCDKeypad keypad(8, 9, 4, 5, 6, 7, A0);
 
 unsigned char uuid[5] = {0, 1, 2, 3, 4};
@@ -31,7 +44,15 @@ typedef enum {
 State state = BOOT;
 bool rn = true;
 
+bool tx_node = false; //TEST
+float payload = 1122.33;
+
 unsigned short menuState = 0;
+
+void rxMode();
+void txMode();
+void interruptHandler(); // prototype to handle IRQ events
+void printRxFifo();      // prototype to print RX FIFO with 1 buffer
 
 unsigned char* generateUUID();
 String selectName();
@@ -39,13 +60,34 @@ unsigned char* selectUUID();
 
 unsigned short getNameLength(const char* s);
 
+bool sendMessage(Contact c);
+
 void timeout();
 
 void setup() {
   Entropy.initialize();
   keypad.begin(16, 2);
-  Serial.begin(115200);
+  //  Serial.begin(115200);
 
+  keypad.clear();
+  keypad.setCursor(0, 0);
+
+  if (!radio.begin()) {
+    keypad.print("Radio Error");
+    while (1); //?
+  }
+  radio.setAutoAck(1);
+  radio.enableAckPayload();
+  // setup the IRQ_PIN
+  pinMode(IRQ_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(IRQ_PIN), interruptHandler, FALLING);
+
+  // Set the PA Level low to try preventing power supply related problems
+  // because these examples are likely run with nodes in close proximity to
+  // each other.
+  radio.setPALevel(RF24_PA_LOW);    // RF24_PA_MAX is default.
+
+  //  radio.openReadingPipe(1,
 
   if (Memory::hasSchema()) {
     state = MENU;
@@ -54,10 +96,21 @@ void setup() {
   }
   Memory memory;
 
+  //radio.openReadingPipe(1, memory.getNodeUUID());
+
+  if (tx_node) {
+    radio.openWritingPipe(0xB00B1E5000LL);
+    txMode();
+    Serial.begin(115200);
+  } else {
+    radio.openReadingPipe(0, 0xB00B1E5000LL);
+    rxMode();
+  }
+
   // loop persistent variables
   int contact_idx = 0;
 
-  while (rn) {
+  while (!rn) {
     keypad.setCursor(0, 0);
     if (state == SETUP) {
       memory.clearContacts();
@@ -191,7 +244,7 @@ void setup() {
       keypad.print("Contact Added!");
       timeout();
       state = MENU;
-      
+
     } else if (state == CONTACTS) {
       keypad.clear();
       keypad.setCursor(0, 0);
@@ -201,7 +254,7 @@ void setup() {
         keypad.print("No Contacts!");
         timeout();
         state = MENU;
-        break;
+        continue;
       }
 
       keypad.clear();
@@ -216,7 +269,7 @@ void setup() {
       keypad.setCursor(13, 1);
       keypad.print(" ->");
 
-      switch(keypad.getButtonPress()) {
+      switch (keypad.getButtonPress()) {
         case SELECT:
           state = NEW_MESSAGE;
           break;
@@ -224,14 +277,14 @@ void setup() {
           state = MENU;
           break;
         case RIGHT:
-          if(contact_idx < memory.getNumberContacts() - 1) {
+          if (contact_idx < memory.getNumberContacts() - 1) {
             contact_idx++;
           } else {
             contact_idx = 0;
           }
           break;
         case LEFT:
-          if(contact_idx > 0) {
+          if (contact_idx > 0) {
             contact_idx--;
           } else {
             contact_idx = memory.getNumberContacts() - 1;
@@ -240,10 +293,31 @@ void setup() {
         default:
           break;
       }
-  
+    } else if (state = NEW_MESSAGE) {
+      keypad.clear();
+      keypad.print("To: ");
+      Contact c = memory.getContact(contact_idx);
+      keypad.print(c.getName());
+      bool sent = sendMessage(c);
+      if (!sent && state == MENU) {
+        continue;
+      }
+      keypad.clear();
+      keypad.setCursor(0, 0);
+      if (sent) {
+        keypad.print("Message Sent!"); //TODO: buzzer
+      } else {
+        keypad.print("Message Failed!");
+      }
+      timeout();
+      state = CONTACTS;
+    } else if (state == MESSAGES) {
 
     }
     else {
+      keypad.clear();
+      keypad.setCursor(0, 0);
+      keypad.print("ERROR");
     }
 
     delay(250);
@@ -252,7 +326,40 @@ void setup() {
 
 }
 
-void loop() {}
+void loop() {
+  if (tx_node) {
+    delay(1000);
+    Serial.println("Sending packet");
+    if (!radio.write( &counter, 1 )) { //if the send fails let the user know over serial monitor
+      Serial.println("packet delivery failed");
+    }
+    Serial.println();
+
+
+  } else {
+    if (pCount < count) { //If this is true it means count was interated and another interrupt occurred
+      Serial.begin(115200);  //start serial to communicate process
+      Serial.print("Receive packet number ");
+      Serial.println(count);
+      Serial.end(); //have to end serial since it uses interrupts
+      pCount = count;
+    }
+
+  } // role
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
 
 void timeout() {
   unsigned long wait = millis();
@@ -351,6 +458,43 @@ unsigned char* selectUUID() {
   }
 }
 
+bool sendMessage(Contact c) {
+  unsigned short message = 0;
+  int len = 0;
+  keypad.setCursor(0, 1);
+  while (true) {
+    Serial.println(message, BIN);
+
+    Button b = keypad.getButtonPress();
+    if (b == SELECT) {
+      break;
+    } else if (b == RIGHT) {
+      if (len < 16) {
+        message |= (1 << (15 - len++));
+      }
+      keypad.print('-');
+    } else if (b == LEFT) {
+      if (len < 16) {
+        len++;
+        keypad.print('.');
+      }
+    } else if (b == UP) {
+      state = MENU;
+      return false;
+    } else if (b == DOWN) {
+      if (len > 0) {
+        keypad.setCursor(len - 1, 1);
+        keypad.print(' ');
+        message &= ~((unsigned short) (1 << (16 - len)));
+        len--;
+      }
+    }
+    delay(150);
+  }
+  return true;
+  //send
+}
+
 unsigned char* generateUUID() {
   unsigned char uuid[5] = {0, 0, 0, 0, 0};
 
@@ -365,4 +509,26 @@ unsigned short getNameLength(const char* s) {
   unsigned short idx = 0;
   for (; * (s + idx) != '\0'; idx++);
   return idx;
+}
+
+void interruptHandler() {
+  delayMicroseconds(250);
+  //  bool tx_ds, tx_df, rx_dr;                       // declare variables for IRQ masks
+  //  radio.whatHappened(tx_ds, tx_df, rx_dr);
+  //
+  //  if (tx_df) radio.flush_tx();
+
+  count++;
+  while (radio.available()) {
+    radio.read(&gotByte, 1);
+  }
+
+}
+void printRxFifo() {}
+void rxMode() {
+  radio.maskIRQ(1, 1, 0);
+  radio.startListening();
+}
+void txMode() {
+  radio.stopListening();
 }
