@@ -24,7 +24,8 @@ typedef enum {
   ABOUT,
   NEW_CONTACT,
   MESSAGES,
-  CONTACTS
+  CONTACTS,
+  NEW_MESSAGE
 } State;
 
 State state = BOOT;
@@ -52,6 +53,9 @@ void setup() {
     state = SETUP;
   }
   Memory memory;
+
+  // loop persistent variables
+  int contact_idx = 0;
 
   while (rn) {
     keypad.setCursor(0, 0);
@@ -187,6 +191,7 @@ void setup() {
       keypad.print("Contact Added!");
       timeout();
       state = MENU;
+      
     } else if (state == CONTACTS) {
       keypad.clear();
       keypad.setCursor(0, 0);
@@ -196,22 +201,46 @@ void setup() {
         keypad.print("No Contacts!");
         timeout();
         state = MENU;
-      }
-      for (int i = 0; i < memory.getNumberContacts(); i++) {
-        keypad.clear();
-        keypad.setCursor(0, 0);
-        keypad.print("Contact:");
-        keypad.setCursor(0, 1);
-        keypad.print("<- ");
-        const char* nam = memory.getContact(i).getName();
-        keypad.setCursor(4 + getNameLength(nam) / 2, 1);
-        keypad.print(nam);
-
-        keypad.setCursor(13, 1);
-        keypad.print(" ->");
-        timeout();
+        break;
       }
 
+      keypad.clear();
+      keypad.setCursor(0, 0);
+      keypad.print("Contact:");
+      keypad.setCursor(0, 1);
+      keypad.print("<- ");
+      const char* nam = memory.getContact(contact_idx).getName();
+      keypad.setCursor(4 + getNameLength(nam) / 2, 1);
+      keypad.print(nam);
+
+      keypad.setCursor(13, 1);
+      keypad.print(" ->");
+
+      switch(keypad.getButtonPress()) {
+        case SELECT:
+          state = NEW_MESSAGE;
+          break;
+        case UP:
+          state = MENU;
+          break;
+        case RIGHT:
+          if(contact_idx < memory.getNumberContacts() - 1) {
+            contact_idx++;
+          } else {
+            contact_idx = 0;
+          }
+          break;
+        case LEFT:
+          if(contact_idx > 0) {
+            contact_idx--;
+          } else {
+            contact_idx = memory.getNumberContacts() - 1;
+          }
+          break;
+        default:
+          break;
+      }
+  
 
     }
     else {
@@ -332,8 +361,8 @@ unsigned char* generateUUID() {
   return uuid;
 }
 
-unsigned short getNameLength(const char* s){
+unsigned short getNameLength(const char* s) {
   unsigned short idx = 0;
-  for(; *(s+idx) != '\0'; idx++);
-  return idx;  
+  for (; * (s + idx) != '\0'; idx++);
+  return idx;
 }
