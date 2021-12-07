@@ -10,7 +10,7 @@
 #include "Memory.hpp"
 #include "Message.hpp"
 
-#define IRQ_PIN 2
+#define IRQ_PIN digitalPinToInterrupt(2)
 
 RF24 radio(A1, A2);
 
