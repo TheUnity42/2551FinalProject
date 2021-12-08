@@ -2,8 +2,6 @@
 #include <string.h>
 
 Message::Message() {
-	this->sender = new unsigned char[UUID_LENGTH];
-	this->receiver = new unsigned char[UUID_LENGTH];
 	this->payload = 0;
 	this->length = 0;
 }
@@ -50,7 +48,7 @@ unsigned short Message::stringToPayload(char const *message) {
 }
 
 char *Message::payloadToString(unsigned short payload, unsigned char length) {
-	char *message = new char[length + 1];
+	char message[length + 1];
 	for (int i = 0; i < length; i++) {
 		message[i] = (payload & (1 << i)) ? '-' : '.';
 	}

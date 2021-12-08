@@ -35,9 +35,6 @@ bool rn = true;
 
 char counter = 'A';
 
-//Message message(uuid, r, 0b0101010101010101, 16);
-//char message[3] = "Hi";
-
 unsigned short menuState = 0;
 
 Memory memory;
@@ -52,6 +49,7 @@ bool uuidcmp(unsigned char* id, unsigned char* id2);
 char* getContactName(unsigned char* id);
 String selectName();
 unsigned char *selectUUID();
+void printUUID(unsigned char* id);
 
 unsigned short getNameLength(const char *s);
 
@@ -76,8 +74,8 @@ void setup() {
 
   Contact node(uuid, 'A');
   memory = Memory(node);
-  //  memory.clearMessages();
-  //  memory.clearContacts();
+    memory.clearMessages();
+    memory.clearContacts();
 
   //  Serial.println(memory.getNumberMessages());
   //  Serial.println(memory.getMessage(memory.getNumberMessages() - 1).getPayloadString());
@@ -414,39 +412,6 @@ void setup() {
 }
 
 void loop() {
-  //  if (role) {
-  //
-  //    char* message_str = message.getPayloadString();
-  //
-  //    char mess_str[23];
-  //
-  //    int j = 0;
-  //    for (int i = 0; message_str[i] != '\0'; i++) {
-  //      mess_str[i] = message_str[i];
-  //      j++;
-  //    }
-  //    mess_str[j++] = '\0';
-  //    for (int i = 0; i < 5; i++) {
-  //      mess_str[j + i] = uuid[i];
-  //    }
-  //    mess_str[j + 5] = '\0';
-  //
-  //    Serial.println(message_str);
-  //
-  //    if (radio.write(&mess_str, 23)) {
-  //      if (radio.rxFifoFull()) {
-  //        Serial.println(F("RX node's FIFO is full; it is not listening any more"));
-  //      } else {
-  //        Serial.println("Transmission successful, but the RX node might still be listening.");
-  //      }
-  //    } else {
-  //      Serial.println(F("Transmission failed or timed out. Continuing anyway."));
-  //      radio.flush_tx(); // discard payload(s) that failed to transmit
-  //    }
-  //    //    Serial.print("Counter at: "); Serial.println(counter++);
-  //  } else {
-  //  }
-  //  delay(30000);
 }
 
 void timeout() {
@@ -590,6 +555,8 @@ bool sendMessage(Contact c) {
 
   radio.openWritingPipe(c.getUUID());
 
+  printUUID(c.getUUID());
+
   char* message_str = mess.getPayloadString();
 
   char mess_str[23];
@@ -625,7 +592,7 @@ bool sendMessage(Contact c) {
 }
 
 unsigned char *generateUUID() {
-  unsigned char uuid[5] = {0, 0, 0, 0, 0};
+  unsigned char uuid[5];
 
   for (int i = 0; i < 5; i++) {
     uuid[i] = Entropy.randomByte();
@@ -725,4 +692,11 @@ void printRxFifo() {
     keypad.print(getContactName(from));
     timeout();
   }
+}
+
+void printUUID(unsigned char* id) {
+  for(int i = 0; i < 5; i++) {
+    Serial.print(id[i], HEX);
+  }
+  Serial.println();
 }

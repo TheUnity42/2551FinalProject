@@ -161,7 +161,7 @@ void Memory::write(unsigned int addr, unsigned char data) {
 
 Contact Memory::getContactFromMemory(unsigned short addr) {
   unsigned char *uuid = getUUIDFromMemory(addr);
-  char *name = new char[NAME_LENGTH + 1];
+  char *name[NAME_LENGTH + 1];
   for (int i = 0; i < NAME_LENGTH; i++) {
     name[i] = read(addr + i + UUID_LENGTH);
   }
@@ -184,7 +184,7 @@ Message Memory::getMessageFromMemory(unsigned short addr) {
 }
 
 unsigned char *Memory::getUUIDFromMemory(unsigned short addr) {
-  unsigned char *uuid = new unsigned char[UUID_LENGTH];
+  unsigned char uuid[UUID_LENGTH];
   for (int i = 0; i < UUID_LENGTH; i++) {
     uuid[i] = this->read(addr + i);
   }
