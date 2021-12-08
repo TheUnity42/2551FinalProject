@@ -4,11 +4,11 @@
 #include "Message.hpp"
 
 Memory::Memory() {
-    if (!hasSchema()) {
-        setSchema();
-        clearMessages();
-        clearContacts();        
-    }
+//    if (!hasSchema()) {
+//        setSchema();
+//        clearMessages();
+//        clearContacts();        
+//    }
 }
 
 Memory::Memory(Contact node) {

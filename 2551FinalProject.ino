@@ -10,22 +10,18 @@
 #include "Memory.hpp"
 #include "Message.hpp"
 
-#define IRQ_PIN digitalPinToInterrupt(2)
+#define IRQ_PIN 2
 
 RF24 radio(A1, A2);
 
-const uint8_t tx_pl_size = 2;
-const uint8_t ack_pl_size = 2;
-
-byte gotByte = 0;		// used to store payload from transmit module
-volatile int count = 0; // tracks the number of interrupts from IRQ
-int pCount = 0;			// tracks what last count value was so know when count has been updated
-byte counter = 1;		// used to count the packets sent
+// Used to control whether this node is sending or receiving
+bool role = true;  // true = TX node, false = RX node
 
 LCDKeypad keypad(8, 9, 4, 5, 6, 7, A0);
 
-unsigned char uuid[5] = {0, 1, 2, 3, 4};
-
+unsigned char uuid[5] = {0, 2, 2, 3, 4};
+unsigned char r[5] = {1, 1, 1, 1, 1};
+ 
 const char alphabet[26] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
                            'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
                           };
@@ -38,17 +34,20 @@ typedef enum { BOOT, SETUP, MENU, ABOUT, NEW_CONTACT, MESSAGES, CONTACTS, NEW_ME
 State state = BOOT;
 bool rn = true;
 
-bool tx_node = false; // TEST
-float payload = 1122.33;
+char counter = 'A';
+
+Message message(uuid, r, 0b0101010101010101, 16);
+//char message[3] = "Hi";
 
 unsigned short menuState = 0;
 
-void rxMode();
-void txMode();
+Memory memory;
+
 void interruptHandler(); // prototype to handle IRQ events
 void printRxFifo();		 // prototype to print RX FIFO with 1 buffer
 
 unsigned char *generateUUID();
+char* getContactName(unsigned char* id);
 String selectName();
 unsigned char *selectUUID();
 
@@ -61,7 +60,8 @@ void timeout();
 void setup() {
   Entropy.initialize();
   keypad.begin(16, 2);
-  //  Serial.begin(115200);
+    Serial.begin(115200);
+    printf_begin();
 
   keypad.clear();
   keypad.setCursor(0, 0);
@@ -71,8 +71,7 @@ void setup() {
     while (1)
       ; //?
   }
-  radio.setAutoAck(1);
-  radio.enableAckPayload();
+
   // setup the IRQ_PIN
   pinMode(IRQ_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(IRQ_PIN), interruptHandler, FALLING);
@@ -81,26 +80,32 @@ void setup() {
   // because these examples are likely run with nodes in close proximity to
   // each other.
   radio.setPALevel(RF24_PA_LOW); // RF24_PA_MAX is default.
+  radio.enableDynamicPayloads();    // ACK payloads are dynamically sized
 
-  //  radio.openReadingPipe(1,
+  // set the TX address of the RX node into the TX pipe
+  radio.openWritingPipe(r);     // always uses pipe 0
+
+  if(role) {
+    radio.stopListening();
+  } else {
+    radio.maskIRQ(1, 1, 0); // args = "data_sent", "data_fail", "data_ready"
+    radio.startListening(); // put radio in RX mode
+  }
 
   if (Memory::hasSchema()) {
     state = MENU;
   } else {
     state = SETUP;
   }
-  Memory memory;
+//  Contact node(uuid, 'T'); //FIXME
+//  Memory memory(node);
 
-  // radio.openReadingPipe(1, memory.getNodeUUID());
-
-  if (tx_node) {
-    radio.openWritingPipe(0xB00B1E5000LL);
-    txMode();
-    Serial.begin(115200);
-  } else {
-    radio.openReadingPipe(0, 0xB00B1E5000LL);
-    rxMode();
+    // set the RX address of the TX node into a RX pipe
+  radio.openReadingPipe(1, memory.getNodeUUID()); // using pipe 1
+  for(int i = 0; i < 5; i++) {
+  Serial.print(memory.getNodeUUID()[i], HEX);
   }
+  Serial.println();
 
   // loop persistent variables
   int contact_idx = 0;
@@ -115,7 +120,7 @@ void setup() {
   Message testMessage(memory.getNodeUUID(), to, 23, 16);
   //      memory.saveMessage(testMessage);
 
-  while (rn) {
+  while (!rn) {
     keypad.setCursor(0, 0);
     if (state == SETUP) {
       memory.clearContacts();
@@ -127,7 +132,7 @@ void setup() {
       unsigned char *uuid = generateUUID();
       Contact c(uuid, n.c_str());
 
-      memory.saveNodeInformation(c);
+      memory = Memory(c);
 
       keypad.clear();
       state = MENU;
@@ -425,25 +430,39 @@ void setup() {
 }
 
 void loop() {
-  if (tx_node) {
-    delay(1000);
-    Serial.println("Sending packet");
-    if (!radio.write(&counter, 1)) { // if the send fails let the user know over serial monitor
-      Serial.println("packet delivery failed");
-    }
-    Serial.println();
+  if (role) {    
 
+    char* message_str = message.getPayloadString();
+
+    char mess_str[23];
+
+    int j = 0;
+    for(int i = 0; message_str[i] != '\0'; i++) {
+      mess_str[i] = message_str[i];
+      j++;
+    }
+    mess_str[j++] = '\0';
+    for(int i = 0; i < 5; i++) {
+      mess_str[j+i] = uuid[i];
+    }
+    mess_str[j+5] = '\0';
+
+      Serial.println(message_str);
+
+    if (radio.write(&mess_str, 23)) {
+      if (radio.rxFifoFull()) {
+        Serial.println(F("RX node's FIFO is full; it is not listening any more"));
+      } else {
+        Serial.println("Transmission successful, but the RX node might still be listening.");
+      }
+    } else {
+      Serial.println(F("Transmission failed or timed out. Continuing anyway."));
+      radio.flush_tx(); // discard payload(s) that failed to transmit
+    }
+//    Serial.print("Counter at: "); Serial.println(counter++);
   } else {
-    if (pCount <
-        count) { // If this is true it means count was interated and another interrupt occurred
-      Serial.begin(115200); // start serial to communicate process
-      Serial.print("Receive packet number ");
-      Serial.println(count);
-      Serial.end(); // have to end serial since it uses interrupts
-      pCount = count;
-    }
-
-  } // role
+  }
+  delay(30000);
 }
 
 void timeout() {
@@ -600,24 +619,78 @@ unsigned short getNameLength(const char *s) {
     ;
   return idx;
 }
-
 void interruptHandler() {
-  delayMicroseconds(250);
-  //  bool tx_ds, tx_df, rx_dr;                       // declare variables for IRQ masks
-  //  radio.whatHappened(tx_ds, tx_df, rx_dr);
-  //
-  //  if (tx_df) radio.flush_tx();
+  // print IRQ status and all masking flags' states
 
-  count++;
-  while (radio.available()) {
-    radio.read(&gotByte, 1);
+  Serial.println(F("\tIRQ pin is actively LOW")); // show that this function was called
+  delayMicroseconds(250);
+  bool tx_ds, tx_df, rx_dr;                       // declare variables for IRQ masks
+  radio.whatHappened(tx_ds, tx_df, rx_dr);        // get values for IRQ masks
+  // whatHappened() clears the IRQ masks also. This is required for
+  // continued TX operations when a transmission fails.
+  // clearing the IRQ masks resets the IRQ pin to its inactive state (HIGH)
+
+  Serial.print(F("\tdata_sent: "));
+  Serial.print(tx_ds);                            // print "data sent" mask state
+  Serial.print(F(", data_fail: "));
+  Serial.print(tx_df);                            // print "data fail" mask state
+  Serial.print(F(", data_ready: "));
+  Serial.println(rx_dr);                          // print "data ready" mask state
+
+  if (tx_df)                                      // if TX payload failed
+    radio.flush_tx();                             // clear all payloads from the TX FIFO
+
+  printRxFifo();
+} // interruptHandler
+
+char* getContactName(unsigned char* id) {
+  char* nam = "Unknown";
+//  for (int i = 0; i < memory.getNumberContacts(); i++) {
+//        if (id == memory.getContact(i).getUUID()) { //FIXME: same here
+//          nam = memory.getContact(i).getName();
+//        }
+//      }
+//      return nam;
+}
+
+void printRxFifo() {
+  if (radio.available()) {                   // if there is data in the RX FIFO
+    // to flush the data from the RX FIFO, we'll fetch it all using 1 buffer
+
+    uint8_t pl_size = 22;
+    char rx_fifo[3 * pl_size];       // RX FIFO is full & we know ACK payloads' size
+    if (radio.rxFifoFull()) {
+      radio.read(&rx_fifo, 3 * pl_size); // this clears the RX FIFO (for this example)
+    } else {
+      uint8_t i = 0;
+      while (radio.available()) {
+        radio.read(&rx_fifo + (i * pl_size), pl_size);
+        i++;
+      }
+    }
+    Serial.print(F("Complete RX FIFO: "));
+    Serial.println(rx_fifo);                 // print the entire RX FIFO with 1 buffer
+    char payload[16];
+    unsigned char from[5];
+    int i = 0;
+    for(; i < 16 && rx_fifo[i] != '\0'; i++) {
+      payload[i] = rx_fifo[i];
+    }
+    for(int j = 0; j < 5; j++) {
+      from[j] = rx_fifo[i+j];
+    }
+    unsigned short payload_short = 0;
+    for(int j = 0; j < i; j++) {
+      payload_short |= (payload[j] == '-' ? 1 : 0) << (15 - j);
+    }
+    Message message(from, uuid, payload_short, i);
+    Serial.println(message.getPayloadString());
+    keypad.clear();
+    keypad.setCursor(0, 0);
+    keypad.print("New Message!");
+    keypad.setCursor(0, 1);
+    keypad.print("From: ");
+    keypad.print(getContactName(from));
+    timeout();
   }
-}
-void printRxFifo() {}
-void rxMode() {
-  radio.maskIRQ(1, 1, 0);
-  radio.startListening();
-}
-void txMode() {
-  radio.stopListening();
 }
