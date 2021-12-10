@@ -101,7 +101,6 @@ void Memory::clearContacts() {
   for (unsigned short i = 0; i < MAX_CONTACTS; i++) {
     this->write(CONTACT_START + (i * CONTACT_SIZE), 0xFF);
   }
-  delay(5);
   this->write(CONTACT_COUNTER, 0);
 }
 
@@ -109,7 +108,6 @@ void Memory::clearMessages() {
   for (unsigned short i = 0; i < MAX_MESSAGES; i++) {
     this->write(MESSAGE_START + (i * MESSAGE_SIZE), 0xFF);
   }
-  delay(5);
   this->write(MESSAGE_COUNTER, 0);
 }
 
@@ -133,6 +131,7 @@ unsigned char Memory::read(unsigned int addr) {
   EECR |= 0x01;
 
   sei();
+  delay(15);
   return EEDR;
 }
 
@@ -157,15 +156,19 @@ void Memory::write(unsigned int addr, unsigned char data) {
   EECR |= 0x02;
 
   sei();
+  delay(5);
 }
 
 Contact Memory::getContactFromMemory(unsigned short addr) {
   unsigned char *uuid = getUUIDFromMemory(addr);
-  char *name[NAME_LENGTH + 1];
+  delay(5);
+  char *name = new char[NAME_LENGTH + 1];
   for (int i = 0; i < NAME_LENGTH; i++) {
+    delay(5);
     name[i] = read(addr + i + UUID_LENGTH);
   }
   name[NAME_LENGTH] = '\0';
+  delay(5);
   return Contact(uuid, name);
 }
 
@@ -175,17 +178,21 @@ Message Memory::getMessageFromMemory(unsigned short addr) {
   unsigned char *receiver = getUUIDFromMemory(addr + UUID_LENGTH);
   delay(5);
   unsigned char length = read(addr + UUID_LENGTH + UUID_LENGTH);
+  delay(5);
   unsigned short payload = 0;
   delay(5);
   payload |= read(addr + UUID_LENGTH + UUID_LENGTH + 1);
-  delay(5);
   payload |= read(addr + UUID_LENGTH + UUID_LENGTH + 2) << 8;
+  delay(5);
   return Message(sender, receiver, payload, length);
 }
 
 unsigned char *Memory::getUUIDFromMemory(unsigned short addr) {
-  unsigned char uuid[UUID_LENGTH];
+  delay(5);
+  //unsigned char *uuid = new unsigned char[UUID_LENGTH];
+  static char uuid[UUID_LENGTH];
   for (int i = 0; i < UUID_LENGTH; i++) {
+    delay(5);
     uuid[i] = this->read(addr + i);
   }
   return uuid;
@@ -196,7 +203,8 @@ void Memory::saveContactToMemory(Contact contact, unsigned short addr) {
   delay(5);
   for (int i = 0; i < NAME_LENGTH; i++) {
     this->write(addr + i + UUID_LENGTH, contact.getName()[i]);
-  }
+  }Serial.print("saved to memory");
+  delay(5);
 }
 
 void Memory::saveMessageToMemory(Message message, unsigned short addr) {
@@ -211,6 +219,7 @@ void Memory::saveMessageToMemory(Message message, unsigned short addr) {
 
 void Memory::saveUUIDToMemory(unsigned char *uuid, unsigned short addr) {
   for (int i = 0; i < UUID_LENGTH; i++) {
+    delay(5);
     this->write(addr + i, uuid[i]);
   }
 }

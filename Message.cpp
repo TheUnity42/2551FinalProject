@@ -37,7 +37,7 @@ unsigned char *Message::getFrom() { return this->sender; }
 
 unsigned short Message::getPayload() { return this->payload; }
 
-char *Message::getPayloadString() { return payloadToString(this->payload, this->length); }
+char *Message::getPayloadString() { return "lolz"; }//payloadToString(this->payload, this->length); }
 
 unsigned short Message::stringToPayload(char const *message) {
 	unsigned short payload = 0;
@@ -48,6 +48,7 @@ unsigned short Message::stringToPayload(char const *message) {
 }
 
 char *Message::payloadToString(unsigned short payload, unsigned char length) {
+  length = MESSAGE_MAX_LENGTH;
 	char message[length + 1];
 	for (int i = 0; i < length; i++) {
 		message[i] = (payload & (1 << i)) ? '-' : '.';

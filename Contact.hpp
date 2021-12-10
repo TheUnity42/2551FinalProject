@@ -16,7 +16,7 @@ class Contact {
 	char *getName();
 
   private:
-	unsigned char* UUID;
-	char *name;
+	unsigned char UUID[UUID_LENGTH];
+	char name[NAME_LENGTH];
 };
 #endif /* Contact_hpp */

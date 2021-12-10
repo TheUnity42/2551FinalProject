@@ -14,12 +14,15 @@
 
 RF24 radio(A1, A2);
 
+
 // Used to control whether this node is sending or receiving
-bool role = true;  // true = TX node, false = RX node
+bool role = false;  // true = TX node, false = RX node
+
+bool uuidcmp(unsigned char* id, unsigned char* id2);
 
 LCDKeypad keypad(8, 9, 4, 5, 6, 7, A0);
 
-unsigned char uuid[5] = {0, 0, 0, 0, 1};
+unsigned char uuid[5] = {0, 0, 0, 0, 2};
 
 const char alphabet[26] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
                            'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
@@ -35,19 +38,19 @@ bool rn = true;
 
 char counter = 'A';
 
-unsigned short menuState = 0;
+const int buzzer = 7;
 
 Memory memory;
 
-bool message_received = false;
+
+
+unsigned short menuState = 0;
 
 void interruptHandler(); // prototype to handle IRQ events
-void printRxFifo();		 // prototype to print RX FIFO with 1 buffer
+void printRxFifo();     // prototype to print RX FIFO with 1 buffer
 
 unsigned char *generateUUID();
-bool uuidcmp(unsigned char* id, unsigned char* id2);
-char* getContactName(unsigned char* id);
-String selectName();
+char* selectName();
 unsigned char *selectUUID();
 void printUUID(unsigned char* id);
 
@@ -57,28 +60,24 @@ bool sendMessage(Contact c);
 
 void timeout();
 
+char* getContactName(unsigned char* id);
+
 void setup() {
+  pinMode(buzzer, OUTPUT);
   Entropy.initialize();
   keypad.begin(16, 2);
   Serial.begin(115200);
   printf_begin();
-
   keypad.clear();
   keypad.setCursor(0, 0);
-
+  //memory.clearContacts();
   if (!radio.begin()) {
     keypad.print("Radio Error");
     while (1)
       ; //?
   }
-
-  Contact node(uuid, 'A');
-  memory = Memory(node);
-    memory.clearMessages();
-    memory.clearContacts();
-
-  //  Serial.println(memory.getNumberMessages());
-  //  Serial.println(memory.getMessage(memory.getNumberMessages() - 1).getPayloadString());
+//  Contact c(uuid, 'T');
+//  memory.saveNodeInformation(c);
 
   // setup the IRQ_PIN
   pinMode(IRQ_PIN, INPUT);
@@ -90,30 +89,46 @@ void setup() {
   radio.setPALevel(RF24_PA_LOW); // RF24_PA_MAX is default.
   radio.enableDynamicPayloads();    // ACK payloads are dynamically sized
 
+  unsigned char u[5] = {0, 0, 2, 0, 0x60};
+  // set the TX address of the RX node into the TX pipe
+  radio.openWritingPipe(u);     // always uses pipe 0
 
-  if (role) {
-    radio.stopListening();
-  } else {
-    radio.maskIRQ(1, 1, 0); // args = "data_sent", "data_fail", "data_ready"
-    radio.startListening(); // put radio in RX mode
-  }
+  //  if (role) {
+  //    radio.stopListening();
+  //  } else {
+  radio.maskIRQ(1, 1, 0); // args = "data_sent", "data_fail", "data_ready"
+  radio.startListening(); // put radio in RX mode
+  //  }
 
   if (Memory::hasSchema()) {
     state = MENU;
   } else {
-    state = MENU;
+    state = SETUP;
   }
+
 
   // set the RX address of the TX node into a RX pipe
   radio.openReadingPipe(1, memory.getNodeUUID()); // using pipe 1
 
+  for (int i = 0; i < 5; i++) {
+    if (memory.getNodeUUID()[i] < 10) Serial.print(0);
+    Serial.print(memory.getNodeUUID()[i], HEX);
+  }
+  Serial.println();
+
   // loop persistent variables
-  int contact_idx = 0;
+  volatile unsigned int contact_idx = 0;
+  volatile unsigned int last_contact_idx = 100;
   int message_idx = 0;
   int last_message_idx = -1;
   bool blink = false;
   unsigned long last_blink_flip = millis();
 
+  //TODO: remove
+  unsigned char from[] = {0, 1, 2, 3, 4};
+  unsigned char to[] = {1, 2, 3, 4, 5};
+  Message testMessage(memory.getNodeUUID(), to, 23, 16);
+  //      memory.saveMessage(testMessage);
 
   while (rn) {
     keypad.setCursor(0, 0);
@@ -121,13 +136,13 @@ void setup() {
       memory.clearContacts();
       memory.clearMessages();
       keypad.print("Enter name:");
-      String n = selectName();
+      char* n = selectName();
       Serial.println(n);
 
       unsigned char *uuid = generateUUID();
-      Contact c(uuid, n.c_str());
+      Contact c(uuid, n);
 
-      memory = Memory(c);
+      memory.saveNodeInformation(c);
 
       keypad.clear();
       state = MENU;
@@ -248,14 +263,22 @@ void setup() {
       keypad.clear();
       keypad.setCursor(0, 0);
       keypad.print("New Contact Name:");
-      String nam = selectName();
+      char* nam1;  //returns char                     //////////////marker
+      nam1 = selectName();
       keypad.clear();
       keypad.setCursor(0, 0);
       keypad.print("New Contact UUID:");
       delay(250);
       unsigned char *uuid = selectUUID();
-      Contact c(uuid, nam.c_str());
+      Serial.println("INPUTED UUID: ");
+      printUUID(uuid);
+      char* nam2[11];
+      for (int i = 0; i < 5; i++) {
+        nam2[i] = nam1[i];
+      }
+      Contact c(uuid, nam2);
       memory.saveContact(c);
+      printUUID(c.getUUID());
       keypad.clear();
       keypad.setCursor(0, 0);
       keypad.print("Contact Added!");
@@ -271,18 +294,26 @@ void setup() {
         continue;
       }
 
-      keypad.clear();
-      keypad.setCursor(0, 0);
-      keypad.print(memory.getNumberContacts());
-      keypad.print(" Contacts:");
-      keypad.setCursor(0, 1);
-      keypad.print("<- ");
-      const char *nam = memory.getContact(contact_idx).getName();
-      keypad.setCursor(4 + getNameLength(nam) / 2, 1);
-      keypad.print(nam);
-
-      keypad.setCursor(13, 1);
-      keypad.print(" ->");
+      if (last_contact_idx != contact_idx) {
+        last_contact_idx = contact_idx;
+        keypad.clear();
+        keypad.setCursor(0, 0);
+        keypad.print("Contact:");
+        keypad.setCursor(0, 1);
+        keypad.print("<- "); Serial.print("contact_idx: "); Serial.println(contact_idx);
+        char *namDisp;
+        namDisp = memory.getContact(contact_idx).getName(); //Returning 'E'
+        keypad.setCursor(3, 1);
+        Serial.print("CONTACT NAME IS: ");
+        for (int i = 0; i < 10 && (namDisp[i] != '\0'); i++) {
+          Serial.print(namDisp[i]);
+          //        keypad.print(namDisp[i]);
+        }
+        Serial.println();
+        printUUID(memory.getContact(contact_idx).getUUID());
+        keypad.setCursor(13, 1);
+        keypad.print(" ->");
+      }
 
       switch (keypad.getButtonPress()) {
         case SELECT:
@@ -301,13 +332,12 @@ void setup() {
         case LEFT:
           if (contact_idx > 0) {
             contact_idx--;
-          } else {
-            contact_idx = memory.getNumberContacts() - 1;
           }
           break;
         default:
           break;
       }
+      delay(50);
     } else if (state == NEW_MESSAGE) {
       keypad.clear();
       keypad.print("To: ");
@@ -322,11 +352,14 @@ void setup() {
       if (sent) {
         keypad.print("Message Sent!"); // TODO: buzzer
       } else {
+        tone(buzzer, 1000);
         keypad.print("Message Failed!");
       }
       timeout();
+      last_contact_idx = 100;
       state = CONTACTS;
-    } else if (state == MESSAGES) {
+    }
+    else if (state == MESSAGES) {
       keypad.print("Messages:");
       if (memory.getNumberMessages() < 1) {
         keypad.clear();
@@ -412,6 +445,21 @@ void setup() {
 }
 
 void loop() {
+  if (role) {
+    if (radio.write(&counter, 23)) {
+      if (radio.rxFifoFull()) {
+        Serial.println(F("RX node's FIFO is full; it is not listening any more"));
+      } else {
+        Serial.println("Transmission successful, but the RX node might still be listening.");
+      }
+    } else {
+      Serial.println(F("Transmission failed or timed out. Continuing anyway."));
+      radio.flush_tx(); // discard payload(s) that failed to transmit
+    }
+    Serial.print("Counter at: "); Serial.println(counter++);
+  } else {
+  }
+  delay(1000);
 }
 
 void timeout() {
@@ -420,10 +468,10 @@ void timeout() {
     ;
 }
 
-String selectName() {
+char* selectName() {
   int index = 0;
   unsigned short len = 0;
-  String nam = "";
+  static char nam[11];
   unsigned long term = millis();
   while (true) {
     keypad.setCursor(len, 1);
@@ -437,8 +485,7 @@ String selectName() {
       if (index < 0)
         index = 25;
     } else if (keypad.getButtonPress() == RIGHT) {
-      nam += alphabet[index];
-      len++;
+      nam[len++] = alphabet[index];
       index = 0;
     } else if (keypad.getButtonPress() == LEFT) {
       if (len > 0) {
@@ -447,8 +494,9 @@ String selectName() {
         index = 0;
       }
     } else if (keypad.getButtonPress() == SELECT) {
-      //      nam[len++] = '\0';
-      nam += alphabet[index];
+
+      nam[index] = alphabet[index];
+      nam[++index] = '\0';
       Serial.println(nam);
       return nam;
     }
@@ -464,20 +512,19 @@ String selectName() {
 unsigned char *selectUUID() {
   int index = 0;
   unsigned short len = 0;
-  unsigned char uuid[5] = {0, 0, 0, 0, 0};
+  static char uuid[5] = {0, 0, 0, 0, 0};
   unsigned long term = millis();
   while (true) {
     keypad.setCursor(0, 1);
     for (int i = 0; i < 5; i++) {
       if (uuid[i] < 10) {
         keypad.print('0');
-        Serial.print('0');
       }
       keypad.print(uuid[i], HEX);
-      Serial.print(uuid[i], HEX);
     }
     keypad.setCursor(len, 1);
     keypad.print(index, HEX);
+    printUUID(uuid);
     Serial.println();
 
     if (keypad.getButtonPress() == UP) {
@@ -504,6 +551,7 @@ unsigned char *selectUUID() {
         index = 0;
       }
     } else if (keypad.getButtonPress() == SELECT) {
+      Serial.println("selected UUID");
       return uuid;
     }
     if ((millis() - term) > 1000) {
@@ -553,6 +601,10 @@ bool sendMessage(Contact c) {
 
   memory.saveMessage(mess);
 
+
+  radio.stopListening();
+  delay(50);
+
   radio.openWritingPipe(c.getUUID());
 
   printUUID(c.getUUID());
@@ -572,27 +624,45 @@ bool sendMessage(Contact c) {
   }
   mess_str[j + 5] = '\0';
 
-  Serial.println(message_str);
+  Serial.println(mess.getPayload(), BIN);
 
-  bool sent = true;
+  bool sent = false;
 
-  if (radio.write(&mess_str, 23)) {
-    if (radio.rxFifoFull()) {
-      Serial.println(F("RX node's FIFO is full; it is not listening any more"));
+  const char* testing = "1234567890123456789012";
+
+  for (int i = 0; i < 5 && sent == false; i++) {
+    if (radio.write(&mess, sizeof(Message))) {
+      sent = true;
+      if (radio.rxFifoFull()) {
+        Serial.println(F("RX node's FIFO is full; it is not listening any more"));
+      } else {
+        Serial.println("Transmission successful, but the RX node might still be listening.");
+      }
     } else {
-      Serial.println("Transmission successful, but the RX node might still be listening.");
+      Serial.println(F("Transmission failed or timed out. Continuing anyway."));
+      radio.flush_tx(); // discard payload(s) that failed to transmit
+
     }
-  } else {
-    Serial.println(F("Transmission failed or timed out. Continuing anyway."));
-    radio.flush_tx(); // discard payload(s) that failed to transmit
-    sent = false;
   }
+
+  delay(50);
+  radio.maskIRQ(1, 1, 0); // args = "data_sent", "data_fail", "data_ready"
+  radio.startListening(); // put radio in RX mode
 
   return sent;
 }
 
+void printUUID(unsigned char* id) {
+  for (int i = 0; i < 5; i++) {
+    if (id[i] < 10) Serial.print(0);
+    Serial.print(id[i], HEX);
+  }
+  Serial.println();
+}
+
+
 unsigned char *generateUUID() {
-  unsigned char uuid[5];
+  unsigned char uuid[5] = {0, 0, 0, 0, 0};
 
   for (int i = 0; i < 5; i++) {
     uuid[i] = Entropy.randomByte();
@@ -609,8 +679,12 @@ unsigned short getNameLength(const char *s) {
 }
 void interruptHandler() {
   // print IRQ status and all masking flags' states
-
-  Serial.println(F("\tIRQ pin is actively LOW")); // show that this function was called
+  /*  radio.printPrettyDetails();
+    Serial.println("BEFORE");
+    radio.printDetails();
+    Serial.println(F("\tIRQ pin is actively LOW")); // show that this function was called
+    Serial.println("AFtER");
+  */
   delayMicroseconds(250);
   bool tx_ds, tx_df, rx_dr;                       // declare variables for IRQ masks
   radio.whatHappened(tx_ds, tx_df, rx_dr);        // get values for IRQ masks
@@ -618,18 +692,70 @@ void interruptHandler() {
   // continued TX operations when a transmission fails.
   // clearing the IRQ masks resets the IRQ pin to its inactive state (HIGH)
 
-  Serial.print(F("\tdata_sent: "));
-  Serial.print(tx_ds);                            // print "data sent" mask state
-  Serial.print(F(", data_fail: "));
-  Serial.print(tx_df);                            // print "data fail" mask state
-  Serial.print(F(", data_ready: "));
-  Serial.println(rx_dr);                          // print "data ready" mask state
+  //  Serial.print(F("\tdata_sent: "));
+  //  Serial.print(tx_ds);                            // print "data sent" mask state
+  //  Serial.print(F(", data_fail: "));
+  //  Serial.print(tx_df);                            // print "data fail" mask state
+  //  Serial.print(F(", data_ready: "));
+  //  Serial.println(rx_dr);                          // print "data ready" mask state
 
   if (tx_df)                                      // if TX payload failed
     radio.flush_tx();                             // clear all payloads from the TX FIFO
 
   printRxFifo();
 } // interruptHandler
+
+void printRxFifo() {
+  if (radio.available()) {                   // if there is data in the RX FIFO
+    // to flush the data from the RX FIFO, we'll fetch it all using 1 buffer
+
+    uint8_t pl_size = sizeof(Message);
+    Message rx_fifo[3];       // RX FIFO is full & we know ACK payloads' size
+    if (radio.rxFifoFull()) {
+      radio.read(&rx_fifo, 3 * pl_size); // this clears the RX FIFO (for this example)
+    } else {
+      uint8_t i = 0;
+      while (radio.available()) {
+        radio.read(&rx_fifo + (i), pl_size);
+        i++;
+      }
+    }
+    Serial.print(F("Complete RX FIFO: "));
+    Serial.println(rx_fifo[0].getPayload(), BIN);                 // print the entire RX FIFO with 1 buffer
+//    char payload[16];
+//    unsigned char from[5];
+//    int i = 0;
+//    for (; i < 16 && rx_fifo[i] != '\0'; i++) {
+//      payload[i] = rx_fifo[i];
+//    }
+//    for (int j = 0; j < 5; j++) {
+//      from[j] = rx_fifo[i + j];
+//    }
+//    unsigned short payload_short = 0;
+//    for (int j = 0; j < i; j++) {
+//      payload_short |= (payload[j] == '-' ? 1 : 0) << (15 - j);
+//    }
+//    Message message(from, uuid, payload_short, i);
+
+    memory.saveMessage(rx_fifo[0]);
+
+    delay(50);
+
+    Serial.println("Rec Message!");
+//    Serial.println(payload_short, BIN);
+//    Serial.println(message.getPayloadString());
+    keypad.setCursor(0, 0);
+    keypad.print("New Message: ");
+    keypad.setCursor(0, 1);
+    keypad.print("From: ");
+//    keypad.print(getContactName(from));
+    keypad.print(memory.getNumberMessages());
+
+    tone(buzzer, 1000);
+    
+    timeout();
+  }
+}
 
 bool uuidcmp(unsigned char* id, unsigned char* id2) {
   bool equ = true;
@@ -647,56 +773,4 @@ char* getContactName(unsigned char* id) {
     }
   }
   return nam;
-}
-
-void printRxFifo() {
-  if (radio.available()) {                   // if there is data in the RX FIFO
-    // to flush the data from the RX FIFO, we'll fetch it all using 1 buffer
-
-    uint8_t pl_size = 22;
-    char rx_fifo[3 * pl_size];       // RX FIFO is full & we know ACK payloads' size
-    if (radio.rxFifoFull()) {
-      radio.read(&rx_fifo, 3 * pl_size); // this clears the RX FIFO (for this example)
-    } else {
-      uint8_t i = 0;
-      while (radio.available()) {
-        radio.read(&rx_fifo + (i * pl_size), pl_size);
-        i++;
-      }
-    }
-    Serial.print(F("Complete RX FIFO: "));
-    Serial.println(rx_fifo);                 // print the entire RX FIFO with 1 buffer
-    char payload[16];
-    unsigned char from[5];
-    int i = 0;
-    for (; i < 16 && rx_fifo[i] != '\0'; i++) {
-      payload[i] = rx_fifo[i];
-    }
-    for (int j = 0; j < 5; j++) {
-      from[j] = rx_fifo[i + j];
-    }
-    unsigned short payload_short = 0;
-    for (int j = 0; j < i; j++) {
-      payload_short |= (payload[j] == '-' ? 1 : 0) << (15 - j);
-    }
-    Message message(from, memory.getNodeUUID(), payload_short, i);
-
-    memory.saveMessage(message);
-
-    Serial.println(message.getPayloadString());
-    keypad.clear();
-    keypad.setCursor(0, 0);
-    keypad.print("New Message!");
-    keypad.setCursor(0, 1);
-    keypad.print("From: ");
-    keypad.print(getContactName(from));
-    timeout();
-  }
-}
-
-void printUUID(unsigned char* id) {
-  for(int i = 0; i < 5; i++) {
-    Serial.print(id[i], HEX);
-  }
-  Serial.println();
 }
